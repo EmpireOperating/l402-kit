@@ -1,4 +1,4 @@
-# Bot contribution policy
+# Agent contribution policy
 
 Same policy as in `nostr-interop-lab`.
 

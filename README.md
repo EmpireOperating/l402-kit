@@ -1,6 +1,6 @@
 # l402-kit
 
-A bot-friendly Lightning (L402/LSAT-style) client + test harness.
+An agent-friendly Lightning (L402/LSAT-style) client + test harness.
 
 **Goal:** make it easy for agents and apps to call paywalled HTTP endpoints by implementing the common UX:
 
