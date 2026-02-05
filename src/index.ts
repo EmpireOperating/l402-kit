@@ -33,7 +33,7 @@ function parseAuthParams(s: string): Record<string, string> {
   for (const part of parts) {
     const eq = part.indexOf('=');
     if (eq <= 0) continue;
-    const k = part.slice(0, eq).trim();
+    const k = part.slice(0, eq).trim().toLowerCase();
     let v = part.slice(eq + 1).trim();
     if (v.startsWith('"') && v.endsWith('"') && v.length >= 2) v = v.slice(1, -1);
     out[k] = v;
@@ -62,7 +62,8 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
 
     const params = parseAuthParams(rest);
 
-    const invoice = params.invoice;
+    // Invoice param variants seen in the wild.
+    const invoice = params.invoice || params.payreq || params.payment_request || params.paymentrequest || params.pr || params.bolt11;
     if (!invoice || typeof invoice !== 'string' || !invoice.trim()) continue;
 
     const meta: Record<string, unknown> = {};

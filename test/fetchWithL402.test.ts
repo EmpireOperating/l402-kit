@@ -101,6 +101,61 @@ test('fetchWithL402: parses JSON variants (payment_request + proof_header)', asy
   }
 });
 
+test('fetchWithL402: parses payreq variant in WWW-Authenticate (LSAT)', async () => {
+  const { baseUrl, close } = await (async () => {
+    const http = await import('node:http');
+    const server = http.createServer((req: any, res: any) => {
+      const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      if (url.pathname !== '/paid') {
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.end('not found');
+        return;
+      }
+
+      const auth = req.headers['authorization'] ? String(req.headers['authorization']) : '';
+      if (auth !== 'paid') {
+        res.writeHead(402, {
+          'content-type': 'text/plain',
+          'www-authenticate': 'LSAT macaroon="mockmacaroon", payreq="lnbc1mockinvoice"'
+        });
+        res.end('payment required');
+        return;
+      }
+
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, paid: true }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => resolve());
+      server.on('error', reject);
+    });
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('failed to bind');
+    return {
+      baseUrl: `http://127.0.0.1:${addr.port}`,
+      close: () => new Promise<void>((resolve, reject) => server.close((err?: any) => (err ? reject(err) : resolve())))
+    };
+  })();
+
+  try {
+    let payCalls = 0;
+    const res = await fetchWithL402(`${baseUrl}/paid`, undefined, {
+      pay: async (challenge) => {
+        payCalls += 1;
+        assert.equal(challenge.invoice, 'lnbc1mockinvoice');
+        assert.equal(challenge.proofHeader, 'authorization');
+        assert.equal((challenge.meta as any)?.macaroon, 'mockmacaroon');
+        return { proof: 'paid' };
+      }
+    });
+
+    assert.equal(payCalls, 1);
+    assert.equal(res.status, 200);
+  } finally {
+    await close();
+  }
+});
+
 test('fetchWithL402: handles combined WWW-Authenticate header (Bearer + L402)', async () => {
   const { baseUrl, close } = await (async () => {
     const http = await import('node:http');

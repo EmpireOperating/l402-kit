@@ -38,7 +38,7 @@ console.log(res.status);
 `fetchWithL402()` tries to extract a Lightning invoice from either:
 
 1) `WWW-Authenticate` header using scheme `L402` or `LSAT`
-   - expected params: `invoice="..."`
+   - invoice param variants (case-insensitive): `invoice`, `payreq`, `payment_request`, `pr`, `bolt11`
    - optional: `macaroon="..."` (exposed via `challenge.meta.macaroon`)
    - proof header hint: **Authorization** (the library sets `challenge.proofHeader = "authorization"`)
 
