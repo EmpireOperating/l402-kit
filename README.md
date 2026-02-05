@@ -12,7 +12,51 @@ An agent-friendly **Bitcoin Lightning** (L402/LSAT-style) client + test harness.
 ## What this repo is
 - A small client library (initially Node/TS) with `fetchWithL402()`
 - Deterministic fixtures + mock servers for 402 challenge flows
+- A tiny runnable harness (`npm run interop`) to sanity-check the flow
 - Interop notes: differences between implementations
+
+## Usage
+
+```ts
+import { fetchWithL402 } from 'l402-kit';
+
+const res = await fetchWithL402('https://example.com/paid', undefined, {
+  pay: async (challenge) => {
+    // challenge.invoice is a BOLT11 invoice string.
+    // Pay it however you want (LND, Core Lightning, NWC, custodial, etc.)
+    // and return a proof string to retry with.
+    const proof = await payInvoiceSomehow(challenge.invoice);
+    return { proof };
+  }
+});
+
+console.log(res.status);
+```
+
+### Supported 402 challenge variants (best-effort)
+
+`fetchWithL402()` tries to extract a Lightning invoice from either:
+
+1) `WWW-Authenticate` header using scheme `L402` or `LSAT`
+   - expected params: `invoice="..."`
+   - optional: `macaroon="..."` (exposed via `challenge.meta.macaroon`)
+   - proof header hint: **Authorization** (the library sets `challenge.proofHeader = "authorization"`)
+
+2) JSON body (content-type doesn’t matter) with any of these keys:
+   - `invoice`
+   - `payment_request` / `paymentRequest`
+   - `pr`
+   - `bolt11`
+
+It also accepts `proofHeader` / `proof_header` hints in the JSON body.
+
+### Runnable harness
+
+```bash
+npm run interop
+```
+
+This spins up a local mock 402 server and runs a full pay+retry cycle.
 
 ## Non-goals
 - Not focused on stablecoin paywalls; this repo targets **Bitcoin + Lightning** flows.

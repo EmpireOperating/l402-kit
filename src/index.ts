@@ -47,38 +47,57 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
   if (!h) return null;
 
   // Common shape: `L402 macaroon="...", invoice="lnbc..."`
-  // Some implementations may use `LSAT` scheme; we treat both.
-  const trimmed = h.trim();
-  const space = trimmed.indexOf(' ');
-  const scheme = (space === -1 ? trimmed : trimmed.slice(0, space)).trim().toLowerCase();
-  const rest = space === -1 ? '' : trimmed.slice(space + 1).trim();
+  // Some implementations use `LSAT` scheme; we treat both.
+  //
+  // Note: multiple WWW-Authenticate values may be concatenated with `,` by some fetch impls.
+  // We split only on commas that look like they're starting a new auth challenge.
+  const segments = h.split(/,(?=\s*(?:L402|LSAT)\s)/i).map(s => s.trim()).filter(Boolean);
 
-  if (scheme !== 'l402' && scheme !== 'lsat') return null;
+  for (const seg of segments) {
+    const space = seg.indexOf(' ');
+    const scheme = (space === -1 ? seg : seg.slice(0, space)).trim().toLowerCase();
+    const rest = space === -1 ? '' : seg.slice(space + 1).trim();
 
-  const params = parseAuthParams(rest);
-  const invoice = params.invoice;
-  if (!invoice || typeof invoice !== 'string' || !invoice.trim()) return null;
+    if (scheme !== 'l402' && scheme !== 'lsat') continue;
 
-  const meta: Record<string, unknown> = {};
-  if (params.macaroon) meta.macaroon = params.macaroon;
+    const params = parseAuthParams(rest);
 
-  return {
-    invoice,
-    proofHeader: 'authorization',
-    meta
-  };
+    const invoice = params.invoice;
+    if (!invoice || typeof invoice !== 'string' || !invoice.trim()) continue;
+
+    const meta: Record<string, unknown> = {};
+    if (params.macaroon) meta.macaroon = params.macaroon;
+
+    return {
+      invoice,
+      proofHeader: 'authorization',
+      meta
+    };
+  }
+
+  return null;
 }
 
 function parseJsonChallenge(bodyText: string): L402Challenge | null {
-  // Accept JSON body with `{ invoice, proofHeader? }`.
+  // Accept JSON bodies that carry a BOLT11 invoice.
+  // Variants seen in the wild include: invoice, payment_request, paymentRequest, pr, bolt11.
   try {
     const j = JSON.parse(bodyText);
     if (!j || typeof j !== 'object') return null;
-    const invoice = (j as any).invoice;
-    if (typeof invoice !== 'string' || !invoice.trim()) return null;
-    const proofHeader = typeof (j as any).proofHeader === 'string' ? (j as any).proofHeader : undefined;
+
+    const candidate = (j as any).invoice ?? (j as any).payment_request ?? (j as any).paymentRequest ?? (j as any).pr ?? (j as any).bolt11;
+    if (typeof candidate !== 'string' || !candidate.trim()) return null;
+
+    const proofHeader =
+      typeof (j as any).proofHeader === 'string'
+        ? (j as any).proofHeader
+        : typeof (j as any).proof_header === 'string'
+          ? (j as any).proof_header
+          : undefined;
+
     const meta = typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined;
-    return { invoice, proofHeader, meta };
+
+    return { invoice: candidate, proofHeader, meta };
   } catch {
     return null;
   }

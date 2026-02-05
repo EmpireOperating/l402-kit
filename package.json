@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "interop": "npm run build && node dist/src/interop.js",
     "lint": "node -e \"console.log('no-lint-yet')\""
   },
   "devDependencies": {
