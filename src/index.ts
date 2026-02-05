@@ -21,8 +21,56 @@ export type FetchWithL402Options = {
   max402Retries?: number;
 };
 
-function parseChallenge(res: Response, bodyText: string): L402Challenge | null {
-  // MVP: accept JSON body with `{ invoice, proofHeader? }`.
+function parseAuthParams(s: string): Record<string, string> {
+  // Parses `k=v` / `k="v"` params from a WWW-Authenticate challenge.
+  // Minimal, not a full RFC parser (good enough for common L402 shapes).
+  const out: Record<string, string> = {};
+  const parts = s
+    .split(',')
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const k = part.slice(0, eq).trim();
+    let v = part.slice(eq + 1).trim();
+    if (v.startsWith('"') && v.endsWith('"') && v.length >= 2) v = v.slice(1, -1);
+    out[k] = v;
+  }
+
+  return out;
+}
+
+function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
+  const h = res.headers.get('www-authenticate');
+  if (!h) return null;
+
+  // Common shape: `L402 macaroon="...", invoice="lnbc..."`
+  // Some implementations may use `LSAT` scheme; we treat both.
+  const trimmed = h.trim();
+  const space = trimmed.indexOf(' ');
+  const scheme = (space === -1 ? trimmed : trimmed.slice(0, space)).trim().toLowerCase();
+  const rest = space === -1 ? '' : trimmed.slice(space + 1).trim();
+
+  if (scheme !== 'l402' && scheme !== 'lsat') return null;
+
+  const params = parseAuthParams(rest);
+  const invoice = params.invoice;
+  if (!invoice || typeof invoice !== 'string' || !invoice.trim()) return null;
+
+  const meta: Record<string, unknown> = {};
+  if (params.macaroon) meta.macaroon = params.macaroon;
+
+  return {
+    invoice,
+    proofHeader: 'authorization',
+    meta
+  };
+}
+
+function parseJsonChallenge(bodyText: string): L402Challenge | null {
+  // Accept JSON body with `{ invoice, proofHeader? }`.
   try {
     const j = JSON.parse(bodyText);
     if (!j || typeof j !== 'object') return null;
@@ -34,6 +82,11 @@ function parseChallenge(res: Response, bodyText: string): L402Challenge | null {
   } catch {
     return null;
   }
+}
+
+function parseChallenge(res: Response, bodyText: string): L402Challenge | null {
+  // Prefer header-based challenges when present.
+  return parseWwwAuthenticateL402(res) || parseJsonChallenge(bodyText);
 }
 
 export async function fetchWithL402(

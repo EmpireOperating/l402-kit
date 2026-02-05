@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { fetchWithL402 } from '../src/index.js';
 import { startMockL402Server } from '../src/mock_server.js';
 
-test('fetchWithL402: pays on 402 then retries with proof header', async () => {
+test('fetchWithL402: pays on 402 then retries with proof header (json challenge)', async () => {
   const srv = await startMockL402Server();
   try {
     let payCalls = 0;
@@ -12,6 +12,30 @@ test('fetchWithL402: pays on 402 then retries with proof header', async () => {
       pay: async (challenge) => {
         payCalls += 1;
         assert.equal(challenge.invoice, 'lnbc1mockinvoice');
+        return { proof: 'paid' };
+      }
+    });
+
+    assert.equal(payCalls, 1);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.paid, true);
+  } finally {
+    await srv.close();
+  }
+});
+
+test('fetchWithL402: pays on 402 then retries with Authorization header (WWW-Authenticate L402)', async () => {
+  const srv = await startMockL402Server({ challengeInHeader: true, proofHeader: 'authorization' });
+  try {
+    let payCalls = 0;
+    const res = await fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
+      pay: async (challenge) => {
+        payCalls += 1;
+        assert.equal(challenge.invoice, 'lnbc1mockinvoice');
+        assert.equal(challenge.proofHeader, 'authorization');
+        assert.equal((challenge.meta as any)?.macaroon, 'mockmacaroon');
         return { proof: 'paid' };
       }
     });

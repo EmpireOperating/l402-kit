@@ -7,6 +7,8 @@ export type MockL402ServerOpts = {
   proofHeader?: string;
   /** Proof value considered valid (default: "paid") */
   requiredProof?: string;
+  /** If true, send the L402 challenge via WWW-Authenticate header instead of JSON body. */
+  challengeInHeader?: boolean;
 };
 
 export async function startMockL402Server(opts: MockL402ServerOpts = {}) {
@@ -31,6 +33,16 @@ export async function startMockL402Server(opts: MockL402ServerOpts = {}) {
 
     const proof = req.headers[proofHeader] ? String(req.headers[proofHeader]) : '';
     if (proof !== requiredProof) {
+      if (opts.challengeInHeader) {
+        res.writeHead(402, {
+          'content-type': 'text/plain',
+          // Common L402/LSAT style.
+          'www-authenticate': `L402 macaroon="mockmacaroon", invoice="lnbc1mockinvoice"`
+        });
+        res.end('payment required');
+        return;
+      }
+
       res.writeHead(402, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
