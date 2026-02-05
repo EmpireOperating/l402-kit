@@ -3,10 +3,13 @@
 Same policy as in `nostr-interop-lab`.
 
 ## Required disclosure
-State bot/tool/model + whether there was human oversight.
+State agent/tool/model + whether there was human oversight.
 
 ## Scope
-Prefer small PRs (<200 LOC changed), tests, fixtures, docs.
+This is an **agent-first** repo. Move fast.
+- Large PRs are allowed if you’re confident.
+- Prefer correctness and tests over polish.
+- Avoid drive-by formatting churn unless it’s part of a deliberate cleanup.
 
 ## Safety
 No real wallet keys. No mainnet payments in CI. Mock by default.
