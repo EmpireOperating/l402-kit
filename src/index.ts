@@ -24,9 +24,11 @@ export type FetchWithL402Options = {
 function parseAuthParams(s: string): Record<string, string> {
   // Parses `k=v` / `k="v"` params from a WWW-Authenticate challenge.
   // Minimal, not a full RFC parser (good enough for common L402 shapes).
+  //
+  // Implementations vary: params may be separated by commas OR semicolons.
   const out: Record<string, string> = {};
   const parts = s
-    .split(',')
+    .split(/[,;](?=\s*[^,;]+=)/)
     .map(p => p.trim())
     .filter(Boolean);
 
@@ -63,7 +65,14 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
     const params = parseAuthParams(rest);
 
     // Invoice param variants seen in the wild.
-    const invoice = params.invoice || params.payreq || params.payment_request || params.paymentrequest || params.pr || params.bolt11;
+    const invoice =
+      params.invoice ||
+      params.payreq ||
+      params.payment_request ||
+      params.paymentrequest ||
+      params.pr ||
+      params.bolt11 ||
+      params['bolt-11'];
     if (!invoice || typeof invoice !== 'string' || !invoice.trim()) continue;
 
     const meta: Record<string, unknown> = {};
@@ -79,14 +88,28 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
   return null;
 }
 
+function extractInvoiceCandidate(obj: any): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+  const candidate = obj.invoice ?? obj.payment_request ?? obj.paymentRequest ?? obj.pr ?? obj.bolt11 ?? obj['bolt-11'];
+  if (typeof candidate === 'string' && candidate.trim()) return candidate;
+  return null;
+}
+
 function parseJsonChallenge(bodyText: string): L402Challenge | null {
   // Accept JSON bodies that carry a BOLT11 invoice.
-  // Variants seen in the wild include: invoice, payment_request, paymentRequest, pr, bolt11.
+  // Variants seen in the wild include:
+  // - direct keys: invoice, payment_request, paymentRequest, pr, bolt11
+  // - wrapped: { l402: { invoice: ... } } or { challenge: { invoice: ... } }
   try {
     const j = JSON.parse(bodyText);
     if (!j || typeof j !== 'object') return null;
 
-    const candidate = (j as any).invoice ?? (j as any).payment_request ?? (j as any).paymentRequest ?? (j as any).pr ?? (j as any).bolt11;
+    const candidate =
+      extractInvoiceCandidate(j)
+      ?? extractInvoiceCandidate((j as any).l402)
+      ?? extractInvoiceCandidate((j as any).challenge)
+      ?? extractInvoiceCandidate((j as any).data);
+
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
 
     const proofHeader =
@@ -94,9 +117,15 @@ function parseJsonChallenge(bodyText: string): L402Challenge | null {
         ? (j as any).proofHeader
         : typeof (j as any).proof_header === 'string'
           ? (j as any).proof_header
-          : undefined;
+          : typeof (j as any)?.l402?.proofHeader === 'string'
+            ? (j as any).l402.proofHeader
+            : typeof (j as any)?.l402?.proof_header === 'string'
+              ? (j as any).l402.proof_header
+              : undefined;
 
-    const meta = typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined;
+    const meta =
+      (typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined)
+      ?? (typeof (j as any)?.l402?.meta === 'object' && (j as any).l402.meta ? (j as any).l402.meta : undefined);
 
     return { invoice: candidate, proofHeader, meta };
   } catch {

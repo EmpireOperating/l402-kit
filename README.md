@@ -38,17 +38,16 @@ console.log(res.status);
 `fetchWithL402()` tries to extract a Lightning invoice from either:
 
 1) `WWW-Authenticate` header using scheme `L402` or `LSAT`
-   - invoice param variants (case-insensitive): `invoice`, `payreq`, `payment_request`, `pr`, `bolt11`
+   - param separators: supports comma- or semicolon-delimited params (best-effort)
+   - invoice param variants (case-insensitive): `invoice`, `payreq`, `payment_request`, `paymentRequest`, `pr`, `bolt11`, `bolt-11`
    - optional: `macaroon="..."` (exposed via `challenge.meta.macaroon`)
    - proof header hint: **Authorization** (the library sets `challenge.proofHeader = "authorization"`)
 
-2) JSON body (content-type doesn’t matter) with any of these keys:
-   - `invoice`
-   - `payment_request` / `paymentRequest`
-   - `pr`
-   - `bolt11`
+2) JSON body (content-type doesn’t matter)
+   - direct keys: `invoice`, `payment_request` / `paymentRequest`, `pr`, `bolt11`
+   - wrapped keys (one level): `l402.invoice`, `challenge.invoice`, `data.invoice`
 
-It also accepts `proofHeader` / `proof_header` hints in the JSON body.
+It also accepts `proofHeader` / `proof_header` hints in the JSON body (top-level or under `l402`).
 
 ### Runnable harness
 
