@@ -41,7 +41,8 @@ console.log(res.status);
    - param separators: supports comma- or semicolon-delimited params (best-effort)
    - invoice param variants (case-insensitive): `invoice`, `payreq`, `payment_request`, `paymentRequest`, `pr`, `bolt11`, `bolt-11`
    - optional: `macaroon="..."` (exposed via `challenge.meta.macaroon`)
-   - proof header hint: **Authorization** (the library sets `challenge.proofHeader = "authorization"`)
+   - proof header hint: defaults to **Authorization** (`challenge.proofHeader = "authorization"`)
+   - optional: `proof_header="x-l402-proof"` (or `proofheader`, `proof-header`, `header`) to hint which header to use on retry
 
 2) JSON body (content-type doesn’t matter)
    - direct keys: `invoice`, `payment_request` / `paymentRequest`, `pr`, `bolt11`

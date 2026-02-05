@@ -81,9 +81,17 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
     const meta: Record<string, unknown> = {};
     if (params.macaroon) meta.macaroon = params.macaroon;
 
+    const proofHeader =
+      params.proof_header ||
+      params.proofheader ||
+      params['proof-header'] ||
+      params.header ||
+      undefined;
+
     return {
       invoice,
-      proofHeader: 'authorization',
+      // Default convention for LSAT/L402 header challenges is to retry with Authorization.
+      proofHeader: proofHeader ? String(proofHeader) : 'authorization',
       meta
     };
   }
@@ -93,7 +101,19 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
 
 function extractInvoiceCandidate(obj: any): string | null {
   if (!obj || typeof obj !== 'object') return null;
-  const candidate = obj.invoice ?? obj.payment_request ?? obj.paymentRequest ?? obj.pr ?? obj.bolt11 ?? obj['bolt-11'];
+
+  // Invoice key variants seen across L402/LSAT implementations.
+  const candidate =
+    obj.invoice ??
+    obj.payreq ??
+    obj.payment_request ??
+    obj.paymentRequest ??
+    obj.paymentrequest ??
+    obj.pr ??
+    obj.bolt11 ??
+    obj.bolt_11 ??
+    obj['bolt-11'];
+
   if (typeof candidate === 'string' && candidate.trim()) return candidate;
   return null;
 }
