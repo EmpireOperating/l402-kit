@@ -56,12 +56,29 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
   //
   // Note: multiple WWW-Authenticate values may be concatenated with `,` by some fetch impls.
   // We split only on commas that look like they're starting a new auth challenge.
-  const segments = h.split(/,(?=\s*(?:L402|LSAT)\s)/i).map(s => s.trim()).filter(Boolean);
+  const segments = h
+    .split(/,(?=\s*(?:L402|LSAT)\s)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   for (const seg of segments) {
-    const space = seg.indexOf(' ');
-    const scheme = (space === -1 ? seg : seg.slice(0, space)).trim().toLowerCase();
-    const rest = space === -1 ? '' : seg.slice(space + 1).trim();
+    // Some servers format as `L402, macaroon="...", invoice="..."` (note comma after scheme)
+    // instead of `L402 macaroon="...", invoice="..."`.
+    const commaScheme = seg.match(/^(L402|LSAT)\s*,\s*(.*)$/i);
+    let scheme: string;
+    let rest: string;
+
+    if (commaScheme) {
+      scheme = commaScheme[1].trim().toLowerCase();
+      rest = commaScheme[2].trim();
+    } else {
+      const space = seg.indexOf(' ');
+      scheme = (space === -1 ? seg : seg.slice(0, space)).trim().toLowerCase();
+      rest = space === -1 ? '' : seg.slice(space + 1).trim();
+      // Be forgiving: strip trailing punctuation from the scheme token (e.g. `l402,`).
+      scheme = scheme.replace(/[^a-z0-9]+$/gi, '');
+      rest = rest.replace(/^,\s*/, '');
+    }
 
     if (scheme !== 'l402' && scheme !== 'lsat') continue;
 
@@ -82,11 +99,7 @@ function parseWwwAuthenticateL402(res: Response): L402Challenge | null {
     if (params.macaroon) meta.macaroon = params.macaroon;
 
     const proofHeader =
-      params.proof_header ||
-      params.proofheader ||
-      params['proof-header'] ||
-      params.header ||
-      undefined;
+      params.proof_header || params.proofheader || params['proof-header'] || params.header || undefined;
 
     return {
       invoice,
@@ -118,49 +131,70 @@ function extractInvoiceCandidate(obj: any): string | null {
   return null;
 }
 
+function extractProofHeaderHint(obj: any): string | undefined {
+  if (!obj || typeof obj !== 'object') return undefined;
+  const v = obj.proofHeader ?? obj.proof_header ?? obj.proofheader ?? obj['proof-header'] ?? obj.header;
+  return typeof v === 'string' && v.trim() ? v : undefined;
+}
+
 function parseJsonChallenge(bodyText: string): L402Challenge | null {
   // Accept JSON bodies that carry a BOLT11 invoice.
   // Variants seen in the wild include:
   // - direct keys: invoice, payment_request, paymentRequest, pr, bolt11
   // - wrapped: { l402: { invoice: ... } } or { challenge: { invoice: ... } }
+  // - error wrappers: { error: { invoice: ... } } / { error: { l402: { invoice: ... } } }
   try {
     const j = JSON.parse(bodyText);
     if (!j || typeof j !== 'object') return null;
 
-    const candidate =
-      extractInvoiceCandidate(j)
-      ?? extractInvoiceCandidate((j as any).l402)
-      ?? extractInvoiceCandidate((j as any).challenge)
-      ?? extractInvoiceCandidate((j as any).data)
-      ?? extractInvoiceCandidate((j as any).error)
-      ?? extractInvoiceCandidate((j as any)?.error?.l402);
+    // We do "best-effort" extraction across a few common wrapper shapes.
+    const candidates: any[] = [
+      j,
+      (j as any).l402,
+      (j as any).challenge,
+      (j as any).data,
+      (j as any).details,
+      (j as any).result,
+      (j as any).payment,
+      (j as any).error,
+      (j as any)?.error?.l402,
+      (j as any)?.error?.data,
+      (j as any)?.data?.l402,
+      (j as any)?.data?.challenge
+    ];
 
-    if (typeof candidate !== 'string' || !candidate.trim()) return null;
+    let invoice: string | null = null;
+    for (const c of candidates) {
+      invoice = extractInvoiceCandidate(c);
+      if (invoice) break;
+    }
+    if (typeof invoice !== 'string' || !invoice.trim()) return null;
 
-    const proofHeader =
-      typeof (j as any).proofHeader === 'string'
-        ? (j as any).proofHeader
-        : typeof (j as any).proof_header === 'string'
-          ? (j as any).proof_header
-          : typeof (j as any)?.l402?.proofHeader === 'string'
-            ? (j as any).l402.proofHeader
-            : typeof (j as any)?.l402?.proof_header === 'string'
-              ? (j as any).l402.proof_header
-              : typeof (j as any)?.error?.proofHeader === 'string'
-                ? (j as any).error.proofHeader
-                : typeof (j as any)?.error?.proof_header === 'string'
-                  ? (j as any).error.proof_header
-                  : typeof (j as any)?.error?.l402?.proofHeader === 'string'
-                    ? (j as any).error.l402.proofHeader
-                    : typeof (j as any)?.error?.l402?.proof_header === 'string'
-                      ? (j as any).error.l402.proof_header
-                      : undefined;
+    // Proof header hint might live at top-level or within common wrappers.
+    const proofHintCandidates: any[] = [
+      j,
+      (j as any).l402,
+      (j as any).challenge,
+      (j as any).data,
+      (j as any).details,
+      (j as any).result,
+      (j as any).error,
+      (j as any)?.error?.l402,
+      (j as any)?.data?.l402,
+      (j as any)?.data?.challenge
+    ];
+
+    let proofHeader: string | undefined;
+    for (const c of proofHintCandidates) {
+      proofHeader = extractProofHeaderHint(c);
+      if (proofHeader) break;
+    }
 
     const meta =
-      (typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined)
-      ?? (typeof (j as any)?.l402?.meta === 'object' && (j as any).l402.meta ? (j as any).l402.meta : undefined);
+      (typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined) ??
+      (typeof (j as any)?.l402?.meta === 'object' && (j as any).l402.meta ? (j as any).l402.meta : undefined);
 
-    return { invoice: candidate, proofHeader, meta };
+    return { invoice, proofHeader, meta };
   } catch {
     return null;
   }

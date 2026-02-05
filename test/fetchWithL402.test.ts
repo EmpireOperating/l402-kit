@@ -532,6 +532,54 @@ test('fetchWithL402: parses JSON error wrapper variants (error.invoice)', async 
   }
 });
 
+test('fetchWithL402: parses wrapped JSON challenge variants (details.payment_request)', async () => {
+  const srv = await startMockL402Server({
+    challengeJsonVariant: 'details',
+    invoiceKey: 'payment_request',
+    includeProofHeaderHint: true
+  });
+  try {
+    let payCalls = 0;
+    const res = await fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
+      pay: async (challenge) => {
+        payCalls += 1;
+        assert.equal(challenge.invoice, 'lnbc1mockinvoice');
+        assert.equal(challenge.proofHeader, 'x-l402-proof');
+        return { proof: 'paid' };
+      }
+    });
+
+    assert.equal(payCalls, 1);
+    assert.equal(res.status, 200);
+  } finally {
+    await srv.close();
+  }
+});
+
+test('fetchWithL402: parses wrapped JSON challenge variants (data.l402.bolt-11)', async () => {
+  const srv = await startMockL402Server({
+    challengeJsonVariant: 'data.l402',
+    invoiceKey: 'bolt-11',
+    includeProofHeaderHint: true
+  });
+  try {
+    let payCalls = 0;
+    const res = await fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
+      pay: async (challenge) => {
+        payCalls += 1;
+        assert.equal(challenge.invoice, 'lnbc1mockinvoice');
+        assert.equal(challenge.proofHeader, 'x-l402-proof');
+        return { proof: 'paid' };
+      }
+    });
+
+    assert.equal(payCalls, 1);
+    assert.equal(res.status, 200);
+  } finally {
+    await srv.close();
+  }
+});
+
 test('fetchWithL402: returns 402 if challenge cannot be parsed', async () => {
   // A server that returns plain text 402.
   const { baseUrl, close } = await (async () => {

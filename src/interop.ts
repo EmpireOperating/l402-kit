@@ -4,7 +4,7 @@ import { fetchWithL402 } from './index.js';
 import { startMockL402Server } from './mock_server.js';
 
 /**
- * Minimal runnable harness that exercises the main happy-path L402 flow.
+ * Minimal runnable harness that exercises several common L402 challenge variants.
  *
  * Usage:
  *   npm run interop
@@ -12,37 +12,49 @@ import { startMockL402Server } from './mock_server.js';
 export async function runInteropHarness() {
   const results: Array<{ name: string; status: number; body: any }> = [];
 
-  // Variant 1: JSON body challenge.
-  {
-    const srv = await startMockL402Server();
+  const run = async (name: string, fn: () => Promise<Response>) => {
+    const res = await fn();
+    const body = await res.json().catch(() => null);
+    results.push({ name, status: res.status, body });
+  };
+
+  // JSON variants.
+  for (const v of ['flat', 'l402', 'data', 'error.l402', 'details'] as const) {
+    const srv = await startMockL402Server({ challengeJsonVariant: v, invoiceKey: 'payment_request', includeProofHeaderHint: true });
     try {
-      const res = await fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
-        pay: async (challenge) => {
-          // In real usage, call your wallet/NWC/etc.
-          assert.ok(challenge.invoice);
-          return { proof: 'paid' };
-        }
-      });
-      const body = await res.json().catch(() => null);
-      results.push({ name: 'json-challenge', status: res.status, body });
+      await run(`json:${v}`, () =>
+        fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
+          pay: async (challenge) => {
+            assert.ok(challenge.invoice);
+            // Our mock includes a proofHeader hint; client should respect it.
+            assert.ok(challenge.proofHeader);
+            return { proof: 'paid' };
+          }
+        })
+      );
     } finally {
       await srv.close();
     }
   }
 
-  // Variant 2: WWW-Authenticate challenge (L402/LSAT style).
+  // WWW-Authenticate challenge (L402/LSAT style).
   {
-    const srv = await startMockL402Server({ challengeInHeader: true, proofHeader: 'authorization' });
+    const srv = await startMockL402Server({
+      challengeInHeader: true,
+      proofHeader: 'authorization',
+      includeProofHeaderHint: true,
+      invoiceKey: 'payreq'
+    });
     try {
-      const res = await fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
-        pay: async (challenge) => {
-          assert.ok(challenge.invoice);
-          assert.equal(challenge.proofHeader, 'authorization');
-          return { proof: 'paid' };
-        }
-      });
-      const body = await res.json().catch(() => null);
-      results.push({ name: 'www-authenticate-challenge', status: res.status, body });
+      await run('www-authenticate:l402', () =>
+        fetchWithL402(`${srv.baseUrl}/paid`, undefined, {
+          pay: async (challenge) => {
+            assert.ok(challenge.invoice);
+            assert.equal(challenge.proofHeader, 'authorization');
+            return { proof: 'paid' };
+          }
+        })
+      );
     } finally {
       await srv.close();
     }
