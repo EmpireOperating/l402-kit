@@ -55,7 +55,9 @@ It also accepts `proofHeader` / `proof_header` hints in the JSON body (top-level
 npm run interop
 ```
 
-This spins up a local mock 402 server and runs a full pay+retry cycle.
+This spins up local mock 402 servers and runs pay+retry cycles for both:
+- JSON body challenges
+- `WWW-Authenticate: L402/LSAT ...` challenges
 
 ## Non-goals
 - Not focused on stablecoin paywalls; this repo targets **Bitcoin + Lightning** flows.
