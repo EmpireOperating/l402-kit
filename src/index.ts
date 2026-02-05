@@ -23,21 +23,24 @@ export type FetchWithL402Options = {
 
 function parseAuthParams(s: string): Record<string, string> {
   // Parses `k=v` / `k="v"` params from a WWW-Authenticate challenge.
-  // Minimal, not a full RFC parser (good enough for common L402 shapes).
+  // Still "best-effort" (not a full RFC 9110 parser), but robust across common L402/LSAT shapes.
   //
-  // Implementations vary: params may be separated by commas OR semicolons.
+  // Implementations vary a lot:
+  // - comma-delimited: k=v, k2=v2
+  // - semicolon-delimited: k=v; k2=v2
+  // - space-delimited: k=v k2=v2
   const out: Record<string, string> = {};
-  const parts = s
-    .split(/[,;](?=\s*[^,;]+=)/)
-    .map(p => p.trim())
-    .filter(Boolean);
 
-  for (const part of parts) {
-    const eq = part.indexOf('=');
-    if (eq <= 0) continue;
-    const k = part.slice(0, eq).trim().toLowerCase();
-    let v = part.slice(eq + 1).trim();
+  // Find all key=value occurrences, where value is either a quoted-string or a token.
+  // Examples:
+  //   macaroon="...", invoice="lnbc..."
+  //   macaroon=abc invoice=lnbc...
+  const re = /([a-zA-Z0-9_-]+)\s*=\s*("(?:[^"\\]|\\.)*"|[^,;\s]+)/g;
+  for (const match of s.matchAll(re)) {
+    const k = String(match[1]).trim().toLowerCase();
+    let v = String(match[2] ?? '').trim();
     if (v.startsWith('"') && v.endsWith('"') && v.length >= 2) v = v.slice(1, -1);
+    if (!k) continue;
     out[k] = v;
   }
 
@@ -108,7 +111,9 @@ function parseJsonChallenge(bodyText: string): L402Challenge | null {
       extractInvoiceCandidate(j)
       ?? extractInvoiceCandidate((j as any).l402)
       ?? extractInvoiceCandidate((j as any).challenge)
-      ?? extractInvoiceCandidate((j as any).data);
+      ?? extractInvoiceCandidate((j as any).data)
+      ?? extractInvoiceCandidate((j as any).error)
+      ?? extractInvoiceCandidate((j as any)?.error?.l402);
 
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
 
@@ -121,7 +126,15 @@ function parseJsonChallenge(bodyText: string): L402Challenge | null {
             ? (j as any).l402.proofHeader
             : typeof (j as any)?.l402?.proof_header === 'string'
               ? (j as any).l402.proof_header
-              : undefined;
+              : typeof (j as any)?.error?.proofHeader === 'string'
+                ? (j as any).error.proofHeader
+                : typeof (j as any)?.error?.proof_header === 'string'
+                  ? (j as any).error.proof_header
+                  : typeof (j as any)?.error?.l402?.proofHeader === 'string'
+                    ? (j as any).error.l402.proofHeader
+                    : typeof (j as any)?.error?.l402?.proof_header === 'string'
+                      ? (j as any).error.l402.proof_header
+                      : undefined;
 
     const meta =
       (typeof (j as any).meta === 'object' && (j as any).meta ? (j as any).meta : undefined)
